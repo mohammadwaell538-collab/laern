@@ -6,29 +6,33 @@ from typing import Optional
 import uvicorn
 from dotenv import load_dotenv
 
-# تحميل متغيرات البيئة (مثل مفتاح API)
+# 1. تحميل ملف .env (للتجربة المحلية فقط)
 load_dotenv()
 
-# إعداد FastAPI
+# 2. إعداد FastAPI
 app = FastAPI()
 
-# --- إعدادات الـ CORS الهامة جداً لعمل تطبيق Flutter Web ---
+# 3. إعدادات الـ CORS لضمان عمل تطبيق Flutter Web بدون مشاكل أمنية
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # يسمح بالوصول من أي مكان (بما في ذلك localhost)
+    allow_origins=["*"],  # يسمح بالوصول من أي رابط (بما في ذلك localhost)
     allow_credentials=True,
     allow_methods=["*"],  # يسمح بجميع أنواع الطلبات (GET, POST, etc.)
     allow_headers=["*"],  # يسمح بجميع الـ Headers
 )
 
-# إعداد مفتاح API الخاص بـ Gemini
-# تأكد من إضافة GEMINI_API_KEY في إعدادات Environment Variables في موقع Render
-GENI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GENI_API_KEY)
+# 4. إعداد مفتاح API الخاص بـ Gemini
+# سيقوم الكود بالبحث عن متغير اسمه GEMINI_API_KEY في إعدادات موقع Render
+api_key = os.getenv("GEMINI_API_KEY")
+
+if api_key:
+    genai.configure(api_key=api_key)
+else:
+    print("Warning: GEMINI_API_KEY not found. Please add it in Render settings.")
 
 @app.get("/")
 def read_root():
-    return {"status": "Server is running successfully!"}
+    return {"status": "الخادم يعمل بنجاح!"}
 
 @app.post("/analyze")
 async def analyze(
@@ -38,37 +42,37 @@ async def analyze(
     file: Optional[UploadFile] = File(None)
 ):
     try:
-        # تجهيز نموذج Gemini
+        # اختيار نموذج Gemini (flash هو الأسرع والأفضل للخطة المجانية)
         model = genai.GenerativeModel('gemini-1.5-flash')
         
+        # بناء نص الأمر (Prompt)
         prompt_content = f"الرجاء القيام بـ {analysis_type} للمحتوى التالي:\n"
         
         if text:
-            prompt_content += f"النص: {text}\n"
+            prompt_content += f"النص المرسل: {text}\n"
         
         if youtube:
-            prompt_content += f"رابط يوتيوب (قم بتحليل المحتوى بناءً على المعلومات المتاحة): {youtube}\n"
+            prompt_content += f"رابط فيديو يوتيوب للتحليل: {youtube}\n"
             
         if file:
-            # في حال وجود ملف PDF، يتم قراءة محتواه (تحتاج لمكتبة إضافية مثل PyMuPDF إذا أردت معالجة معقدة)
-            # هنا نفترض معالجة أولية للنص
-            file_content = await file.read()
-            prompt_content += f"محتوى الملف المرفق متاح للمعالجة.\n"
+            # ملاحظة: لمعالجة ملفات PDF بشكل متقدم قد تحتاج لمكتبة إضافية
+            # هنا نقوم بتأكيد استقبال الملف وإخبار الذكاء الاصطناعي بوجوده
+            prompt_content += f"اسم الملف المرفق: {file.filename}\n"
 
-        # إرسال الطلب لـ Gemini
+        # إرسال الطلب إلى Gemini
         response = model.generate_content(prompt_content)
         
+        # إرجاع النتيجة لتطبيق Flutter
         return {
             "analysis": response.text,
-            "main_topics": 5, # قيم افتراضية للتجربة
-            "key_points": 10,
             "status": "success"
         }
 
     except Exception as e:
+        # في حال حدوث خطأ، سيظهر لك السبب في الـ Logs على Render
         raise HTTPException(status_code=500, detail=str(e))
 
+# 5. تشغيل السيرفر (Render يستخدم المنفذ PORT تلقائياً)
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port) 
-    
+    uvicorn.run(app, host="0.0.0.0", port=port)
